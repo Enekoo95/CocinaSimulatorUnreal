@@ -18,8 +18,9 @@ public class CocinaSimulator : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
-		});
+			"Slate",
+			"PhotonFusion"
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
