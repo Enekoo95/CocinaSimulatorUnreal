@@ -10,7 +10,7 @@
 	"DocsURL": "https://doc.photonengine.com/fusion-unreal/current/fusion-3-intro",
 	"MarketplaceURL": "",
 	"SupportURL": "https://www.photonengine.com/",
-	"EngineVersion": "5.7.0",
+	"EngineVersion": "5.6.0",
 	"CanContainContent": true,
 	"IsBetaVersion": true,
 	"IsExperimentalVersion": true,
