@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 1119,
-	"VersionName": "3.0.0-Preview-1119",
+	"Version": 1214,
+	"VersionName": "3.0.0-Preview-1214",
 	"FriendlyName": "Photon Fusion",
 	"Description": "Client plugin for Photon Fusion",
 	"Category": "Photon",
@@ -10,7 +10,7 @@
 	"DocsURL": "https://doc.photonengine.com/fusion-unreal/current/fusion-3-intro",
 	"MarketplaceURL": "",
 	"SupportURL": "https://www.photonengine.com/",
-	"EngineVersion": "5.6.0",
+	"EngineVersion": "5.7.0",
 	"CanContainContent": true,
 	"IsBetaVersion": true,
 	"IsExperimentalVersion": true,
@@ -24,7 +24,8 @@
 				"Win64",
 				"Android",
 				"Mac",
-				"IOS"
+				"IOS",
+				"Linux"
 			]
 		},
 		{
@@ -33,7 +34,8 @@
 			"LoadingPhase": "PreDefault",
 			"PlatformAllowList": [
 				"Win64",
-				"Mac"
+				"Mac",
+				"Linux"
 			]
 		}
 	]
