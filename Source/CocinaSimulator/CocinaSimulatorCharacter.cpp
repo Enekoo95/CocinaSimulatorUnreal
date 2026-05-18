@@ -11,13 +11,17 @@
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 #include "CocinaSimulator.h"
+#include "PickUp.h"
+#include "DropZone.h"
+#include "ProcessingStation.h"
+#include "Net/UnrealNetwork.h"
 
 ACocinaSimulatorCharacter::ACocinaSimulatorCharacter()
 {
-	
+
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
-		
+
 	// Don't rotate when the controller rotates. Let that just affect the camera.
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
@@ -35,6 +39,7 @@ ACocinaSimulatorCharacter::ACocinaSimulatorCharacter()
 	GetCharacterMovement()->MinAnalogWalkSpeed = 20.f;
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
 	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
+	GetCharacterMovement()->bUseFlatBaseForFloorChecks = true;
 
 	// Create a camera boom (pulls in towards the player if there is a collision)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -46,6 +51,12 @@ ACocinaSimulatorCharacter::ACocinaSimulatorCharacter()
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	// Hold point positioned in front of the character (80 forward, 50 up from capsule center)
+	HoldPoint = CreateDefaultSubobject<USceneComponent>(TEXT("HoldPoint"));
+	HoldPoint->SetupAttachment(GetRootComponent());
+	HoldPoint->SetRelativeLocation(FVector(80.f, 0.f, 50.f));
+
 	bReplicates = true;
 	SetReplicateMovement(true);
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
@@ -56,7 +67,7 @@ void ACocinaSimulatorCharacter::SetupPlayerInputComponent(UInputComponent* Playe
 {
 	// Set up action bindings
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent)) {
-		
+
 		// Jumping
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
@@ -67,6 +78,12 @@ void ACocinaSimulatorCharacter::SetupPlayerInputComponent(UInputComponent* Playe
 
 		// Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ACocinaSimulatorCharacter::Look);
+
+		// Interact / Pickup
+		if (InteractAction)
+		{
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &ACocinaSimulatorCharacter::DoInteract);
+		}
 	}
 	else
 	{
@@ -132,4 +149,103 @@ void ACocinaSimulatorCharacter::DoJumpEnd()
 {
 	// signal the character to stop jumping
 	StopJumping();
+}
+
+void ACocinaSimulatorCharacter::DoInteract()
+{
+	if (!HasAuthority())
+	{
+		ServerAttemptInteract();
+		return;
+	}
+
+	if (HeldItem)
+	{
+		// Restore original rotation mode
+		GetCharacterMovement()->bOrientRotationToMovement = true;
+		bUseControllerRotationYaw = false;
+
+		// Check if player is standing inside a processing station first
+		TArray<AActor*> OverlappingActors;
+		GetOverlappingActors(OverlappingActors, AProcessingStation::StaticClass());
+
+		bool bDeliveredToStation = false;
+		if (OverlappingActors.Num() > 0)
+		{
+			AProcessingStation* Station = Cast<AProcessingStation>(OverlappingActors[0]);
+			if (Station && Station->ReceiveItem(HeldItem))
+			{
+				HeldItem = nullptr;
+				bDeliveredToStation = true;
+			}
+		}
+
+		if (!bDeliveredToStation)
+		{
+			GetOverlappingActors(OverlappingActors, ADropZone::StaticClass());
+			if (OverlappingActors.Num() > 0)
+			{
+				ADropZone* Zone = Cast<ADropZone>(OverlappingActors[0]);
+				Zone->ReceiveItem(HeldItem);
+				HeldItem = nullptr;
+			}
+			else
+			{
+				HeldItem->Drop(HoldPoint->GetComponentLocation());
+				HeldItem = nullptr;
+			}
+		}
+	}
+	else
+	{
+		// Sweep a sphere forward to find a nearby pickup
+		FVector Start = GetActorLocation();
+		FVector End = Start + GetActorForwardVector() * PickupRange;
+
+		TArray<FHitResult> Hits;
+		FCollisionShape Sphere = FCollisionShape::MakeSphere(60.f);
+		FCollisionObjectQueryParams ObjQuery;
+		ObjQuery.AddObjectTypesToQuery(ECC_WorldDynamic);
+		ObjQuery.AddObjectTypesToQuery(ECC_PhysicsBody);
+		FCollisionQueryParams Params;
+		Params.AddIgnoredActor(this);
+
+		GetWorld()->SweepMultiByObjectType(Hits, Start, End, FQuat::Identity, ObjQuery, Sphere, Params);
+
+		for (const FHitResult& Hit : Hits)
+		{
+			APickUp* Pickup = Cast<APickUp>(Hit.GetActor());
+			if (Pickup && !Pickup->bIsHeld)
+			{
+				Pickup->PickUp(HoldPoint);
+				HeldItem = Pickup;
+
+				// While holding: character faces camera so the item is always visible in front
+				GetCharacterMovement()->bOrientRotationToMovement = false;
+				bUseControllerRotationYaw = true;
+				break;
+			}
+		}
+	}
+}
+
+void ACocinaSimulatorCharacter::ServerAttemptInteract_Implementation()
+{
+	DoInteract();
+}
+
+bool ACocinaSimulatorCharacter::ServerAttemptInteract_Validate()
+{
+	return true;
+}
+
+void ACocinaSimulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ACocinaSimulatorCharacter, HeldItem);
+}
+
+void ACocinaSimulatorCharacter::OnRep_HeldItem()
+{
+	// Local clients }
 }
