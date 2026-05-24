@@ -41,12 +41,9 @@ void APickUp::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (bIsHeld && HoldPointRef)
-	{
-		SetActorLocation(HoldPointRef->GetComponentLocation());
-		SetActorRotation(HoldPointRef->GetComponentRotation());
-	}
-	else if (bIsOnSpawner && !bIsHeld)
+	// Attachment handles following the hold point on all clients automatically.
+	// Only do manual bobbing when on the spawner.
+	if (bIsOnSpawner && !bIsHeld)
 	{
 		BobTime += DeltaTime;
 		float BobOffset = FMath::Sin(BobTime * 2.f) * 10.f;
@@ -76,6 +73,10 @@ void APickUp::PickUp(USceneComponent* HoldPoint)
 	Mesh->SetSimulatePhysics(false);
 	SetActorEnableCollision(false);
 
+	// Attach to the hold point so all clients see the object follow the character.
+	// Actor attachment replicates automatically in Unreal.
+	AttachToComponent(HoldPoint, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+
 	BP_OnPickedUp();
 }
 
@@ -85,6 +86,8 @@ void APickUp::Drop(FVector DropLocation, bool bInDropZone)
 
 	bIsHeld = false;
 	HoldPointRef = nullptr;
+
+	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
 	if (bInDropZone)
 	{
@@ -119,6 +122,8 @@ void APickUp::PlaceInStation(const FVector& Location)
 	bIsHeld = false;
 	HoldPointRef = nullptr;
 	ItemState = EItemState::Processing;
+
+	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
 	SetActorLocation(Location + FVector(0.f, 0.f, 20.f));
 	SetActorEnableCollision(false);
