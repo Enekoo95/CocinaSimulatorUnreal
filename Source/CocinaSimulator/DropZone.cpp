@@ -6,6 +6,7 @@
 #include "CocinaSimulatorGameMode.h"
 #include "CocinaSimulatorGameState.h"
 #include "Kismet/GameplayStatics.h"
+#include "Net/UnrealNetwork.h"
 
 ADropZone::ADropZone()
 {
@@ -20,8 +21,16 @@ ADropZone::ADropZone()
 	RootComponent = ZoneBox;
 }
 
+void ADropZone::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ADropZone, DeliveredItems);
+}
+
 void ADropZone::ReceiveItem(APickUp* Item)
 {
+	if (!HasAuthority()) return;
+
 	if (!Item || Item->bWasDelivered || Item->ItemState != EItemState::Ready)
 	{
 		return;
@@ -40,7 +49,7 @@ void ADropZone::ReceiveItem(APickUp* Item)
 	Item->bWasDelivered = true;
 	DeliveredItems.Add(Item);
 
-	BP_OnItemReceived(Item);
+	Multicast_OnItemReceived(Item);
 	CheckRecipeComplete();
 }
 
@@ -54,6 +63,11 @@ bool ADropZone::HasIngredient(EIngredientType Type) const
 		}
 	}
 	return false;
+}
+
+void ADropZone::OnRep_DeliveredItems()
+{
+	BP_OnDeliveredItemsUpdated(DeliveredItems);
 }
 
 void ADropZone::CheckRecipeComplete()
@@ -78,14 +92,25 @@ void ADropZone::CheckRecipeComplete()
 		{
 			if (Item)
 			{
-				Item->SetItemState(EItemState::Delivered);
+				Item->SetActorHiddenInGame(true);
+				Item->SetActorEnableCollision(false);
 				Item->Destroy();
 			}
 		}
 		DeliveredItems.Empty();
 
-		BP_OnRecipeCompleted();
+		Multicast_OnRecipeCompleted();
 	}
+}
+
+void ADropZone::Multicast_OnItemReceived_Implementation(APickUp* Item)
+{
+	BP_OnItemReceived(Item);
+}
+
+void ADropZone::Multicast_OnRecipeCompleted_Implementation()
+{
+	BP_OnRecipeCompleted();
 }
 
 void ADropZone::OnZoneBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,

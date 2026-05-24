@@ -47,6 +47,12 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category="Station")
     void BP_OnProcessingCompleted(APickUp* Item);
 
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_OnProcessingStarted(APickUp* Item);
+
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_OnProcessingCompleted(APickUp* Item);
+
 protected:
     virtual void BeginPlay() override;
 

@@ -64,7 +64,7 @@ bool AProcessingStation::ReceiveItem(APickUp* Item)
 
     UpdateStationColor();
     GetWorldTimerManager().SetTimer(ProcessTimerHandle, this, &AProcessingStation::FinishProcessing, ProcessTimeSeconds, false);
-    BP_OnProcessingStarted(CurrentItem);
+    Multicast_OnProcessingStarted(CurrentItem);
     return true;
 }
 void AProcessingStation::FinishProcessing()
@@ -101,10 +101,20 @@ void AProcessingStation::FinishProcessing()
         GS->SetSharedScore(GS->GetSharedScore() + Points);
     }
 
-    BP_OnProcessingCompleted(CurrentItem);
+    Multicast_OnProcessingCompleted(CurrentItem);
     CurrentItem = nullptr;
     bIsProcessing = false;
     UpdateStationColor();
+}
+
+void AProcessingStation::Multicast_OnProcessingStarted_Implementation(APickUp* Item)
+{
+    BP_OnProcessingStarted(Item);
+}
+
+void AProcessingStation::Multicast_OnProcessingCompleted_Implementation(APickUp* Item)
+{
+    BP_OnProcessingCompleted(Item);
 }
 void AProcessingStation::UpdateStationColor()
 {
