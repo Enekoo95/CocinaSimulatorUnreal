@@ -2,11 +2,12 @@
 
 
 #include "CocinaSimulatorPlayerController.h"
+#include "CocinaSimulator.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
 #include "Blueprint/UserWidget.h"
-#include "CocinaSimulator.h"
+#include "EndMatchMenuWidget.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
 void ACocinaSimulatorPlayerController::BeginPlay()
@@ -23,13 +24,58 @@ void ACocinaSimulatorPlayerController::BeginPlay()
 		{
 			// add the controls to the player screen
 			MobileControlsWidget->AddToPlayerScreen(0);
-
-		} else {
-
-			UE_LOG(LogCocinaSimulator, Error, TEXT("Could not spawn mobile controls widget."));
-
 		}
+		else
+		{
+			UE_LOG(LogCocinaSimulator, Error, TEXT("Could not spawn mobile controls widget."));
+		}
+	}
+}
 
+void ACocinaSimulatorPlayerController::ShowEndMatchMenu(EEndMatchReason Reason, int32 FinalScore)
+{
+	if (EndMatchMenuWidget)
+	{
+		EndMatchMenuWidget->RemoveFromParent();
+		EndMatchMenuWidget = nullptr;
+	}
+
+	if (EndMatchMenuWidgetClass)
+	{
+		EndMatchMenuWidget = CreateWidget<UEndMatchMenuWidget>(this, EndMatchMenuWidgetClass);
+		if (EndMatchMenuWidget)
+		{
+			EndMatchMenuWidget->AddToPlayerScreen(1000);
+			EndMatchMenuWidget->SetEndMatchSummary(Reason, FinalScore);
+		}
+	}
+	else
+	{
+		BP_ShowEndMatchSummary(Reason, FinalScore);
+	}
+
+	if (IsLocalController())
+	{
+		FInputModeUIOnly InputMode;
+		if (EndMatchMenuWidget)
+		{
+			InputMode.SetWidgetToFocus(EndMatchMenuWidget->TakeWidget());
+		}
+		SetInputMode(InputMode);
+		bShowMouseCursor = true;
+	}
+}
+
+void ACocinaSimulatorPlayerController::Client_ShowEndMatchMenu_Implementation(EEndMatchReason Reason, int32 FinalScore)
+{
+	ShowEndMatchMenu(Reason, FinalScore);
+}
+
+void ACocinaSimulatorPlayerController::ReturnToLobby()
+{
+	if (IsLocalController())
+	{
+		ClientReturnToMainMenuWithTextReason(FText::FromString(TEXT("Volviendo al lobby")));
 	}
 }
 

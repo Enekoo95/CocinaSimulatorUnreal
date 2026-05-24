@@ -3,12 +3,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CocinaSimulator.h"
 #include "GameFramework/GameModeBase.h"
 #include "CocinaSimulatorGameMode.generated.h"
 
 class APickUp;
 class ACocinaSimulatorGameState;
 class ACocinaSimulatorPlayerState;
+class UUserWidget;
 
 UCLASS()
 class ACocinaSimulatorGameMode : public AGameModeBase
@@ -26,6 +28,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Delivery")
     int32 GetRemainingDeliveries() const;
 
+    UFUNCTION(BlueprintCallable, Category = "Match")
+    void CompleteMatch(EEndMatchReason Reason);
+
+    UFUNCTION(BlueprintCallable, Category = "Match")
+    void ShowEndMatchForPlayers(EEndMatchReason Reason);
+
     UPROPERTY(BlueprintReadOnly, Category = "Delivery")
     int32 DeliveriesCompleted = 0;
 
@@ -37,6 +45,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game")
     float MatchLengthSeconds = 120.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Match")
+    TSubclassOf<UUserWidget> EndMatchMenuWidgetClass;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game")
     int32 ScorePerDelivery = 10;
@@ -52,6 +63,4 @@ protected:
 
     UFUNCTION()
     void OnMatchTimerTick();
-
-    void CompleteMatch();
 };

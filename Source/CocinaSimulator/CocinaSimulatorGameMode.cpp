@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "CocinaSimulatorGameMode.h"
+#include "CocinaSimulatorPlayerController.h"
 #include "CocinaSimulatorGameState.h"
 #include "CocinaSimulatorPlayerState.h"
 #include "PickUp.h"
@@ -53,7 +54,7 @@ void ACocinaSimulatorGameMode::AddDelivery(APickUp* Item)
 
     if (DeliveriesCompleted >= RequiredDeliveries)
     {
-        CompleteMatch();
+        CompleteMatch(EEndMatchReason::RecipeCompleted);
     }
 }
 
@@ -77,12 +78,12 @@ void ACocinaSimulatorGameMode::OnMatchTimerTick()
 
         if (Remaining <= 0.f)
         {
-            CompleteMatch();
+            CompleteMatch(EEndMatchReason::TimeExpired);
         }
     }
 }
 
-void ACocinaSimulatorGameMode::CompleteMatch()
+void ACocinaSimulatorGameMode::CompleteMatch(EEndMatchReason Reason)
 {
     if (bGameCompleted)
     {
@@ -98,4 +99,22 @@ void ACocinaSimulatorGameMode::CompleteMatch()
     }
 
     BP_OnGameCompleted();
+    ShowEndMatchForPlayers(Reason);
+}
+
+void ACocinaSimulatorGameMode::ShowEndMatchForPlayers(EEndMatchReason Reason)
+{
+    int32 FinalScore = 0;
+    if (ACocinaSimulatorGameState* GS = GetGameState<ACocinaSimulatorGameState>())
+    {
+        FinalScore = GS->GetSharedScore();
+    }
+
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    {
+        if (ACocinaSimulatorPlayerController* PC = Cast<ACocinaSimulatorPlayerController>(It->Get()))
+        {
+            PC->Client_ShowEndMatchMenu(Reason, FinalScore);
+        }
+    }
 }
