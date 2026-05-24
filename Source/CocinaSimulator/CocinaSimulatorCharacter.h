@@ -1,5 +1,4 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -32,7 +31,6 @@ class ACocinaSimulatorCharacter : public ACharacter
 	USceneComponent* HoldPoint;
 
 protected:
-
 	UPROPERTY(EditAnywhere, Category = "Input")
 	UInputAction* JumpAction;
 
@@ -48,6 +46,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Input")
 	UInputAction* InteractAction;
 
+	// HeldItem replicado con RepNotify para que los clientes actualicen su estado visual
 	UPROPERTY(ReplicatedUsing = OnRep_HeldItem, BlueprintReadOnly, Category = "Pickup")
 	APickUp* HeldItem = nullptr;
 
@@ -55,15 +54,14 @@ protected:
 	float PickupRange = 150.f;
 
 public:
-
 	ACocinaSimulatorCharacter();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
-
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+	// Todo el flujo de interacción pasa por aquí, siempre ejecutado en el servidor
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerAttemptInteract();
 
@@ -71,11 +69,9 @@ protected:
 	void OnRep_HeldItem();
 
 	void Look(const FInputActionValue& Value);
-
 	void Move(const FInputActionValue& Value);
 
 public:
-
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoMove(float Right, float Forward);
 
@@ -88,11 +84,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoJumpEnd();
 
+	// DoInteract: el cliente lo llama, pero redirige al servidor via ServerAttemptInteract
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoInteract();
 
 public:
-
-	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
-	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+	FORCEINLINE USpringArmComponent* GetCameraBoom()   const { return CameraBoom; }
+	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+	FORCEINLINE USceneComponent* GetHoldPoint()    const { return HoldPoint; }
 };

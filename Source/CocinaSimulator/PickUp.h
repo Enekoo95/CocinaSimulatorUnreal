@@ -1,5 +1,4 @@
 // Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -13,19 +12,19 @@ UENUM(BlueprintType)
 enum class EIngredientType : uint8
 {
 	None = 0 UMETA(DisplayName = "None"),
-	Meat UMETA(DisplayName = "Meat"),
-	Lettuce UMETA(DisplayName = "Lettuce"),
-	Potato UMETA(DisplayName = "Potato"),
-	Plate UMETA(DisplayName = "Plate")
+	Meat         UMETA(DisplayName = "Meat"),
+	Lettuce      UMETA(DisplayName = "Lettuce"),
+	Potato       UMETA(DisplayName = "Potato"),
+	Plate        UMETA(DisplayName = "Plate")
 };
 
 UENUM(BlueprintType)
 enum class EItemState : uint8
 {
 	Raw = 0 UMETA(DisplayName = "Raw"),
-	Processing UMETA(DisplayName = "Processing"),
-	Ready UMETA(DisplayName = "Ready"),
-	Delivered UMETA(DisplayName = "Delivered")
+	Processing     UMETA(DisplayName = "Processing"),
+	Ready          UMETA(DisplayName = "Ready"),
+	Delivered      UMETA(DisplayName = "Delivered")
 };
 
 UCLASS()
@@ -39,13 +38,14 @@ class COCINASIMULATOR_API APickUp : public AActor
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	USphereComponent* InteractionSphere;
 
+	// Weak pointer — evita crash si el Character dueño muere
 	UPROPERTY()
-	USceneComponent* HoldPointRef;
+	TWeakObjectPtr<USceneComponent> HoldPointRef;
 
 public:
 	APickUp();
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Pickup")
+	UPROPERTY(ReplicatedUsing = OnRep_IsHeld, BlueprintReadOnly, Category = "Pickup")
 	bool bIsHeld = false;
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Pickup")
@@ -57,11 +57,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup")
 	EIngredientType IngredientType = EIngredientType::None;
 
-	UPROPERTY(BlueprintReadWrite, Category = "Pickup")
+	UPROPERTY(ReplicatedUsing = OnRep_IsOnSpawner, BlueprintReadWrite, Category = "Pickup")
 	bool bIsOnSpawner = true;
 
-	void PickUp(USceneComponent* HoldPoint);
-	void Drop(FVector DropLocation, bool bInDropZone = false);
+	void PickUpItem(USceneComponent* HoldPoint);
+
+	void DropItem(FVector DropLocation, bool bInDropZone = false);
+
 	void PlaceInStation(const FVector& Location);
 	void MarkReady();
 	void SetItemState(EItemState NewState);
@@ -75,8 +77,8 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Pickup")
 	void BP_OnStateChanged(EItemState NewState);
 
-	FORCEINLINE UStaticMeshComponent* GetMesh() const { return Mesh; }
-	FORCEINLINE USphereComponent* GetInteractionSphere() const { return InteractionSphere; }
+	FORCEINLINE UStaticMeshComponent* GetMesh()               const { return Mesh; }
+	FORCEINLINE USphereComponent* GetInteractionSphere()  const { return InteractionSphere; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -86,11 +88,37 @@ protected:
 	UFUNCTION()
 	void OnRep_ItemState();
 
+	UFUNCTION()
+	void OnRep_IsHeld();
+
+	UFUNCTION()
+	void OnRep_IsOnSpawner();
+
+	UFUNCTION(Server, Reliable)
+	void Server_PickUp(USceneComponent* HoldPoint);
+
+	UFUNCTION(Server, Reliable)
+	void Server_Drop(FVector DropLocation, bool bInDropZone);
+
+	UFUNCTION(Server, Reliable)
+	void Server_PlaceInStation(FVector Location);
+
+	UFUNCTION(Server, Reliable)
+	void Server_MarkReady();
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_OnPickedUp();
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_OnDropped(bool bInDropZone);
+
 	void UpdateItemColor();
+	void ApplyPickUpLocally(USceneComponent* HoldPoint);
+	void ApplyDropLocally(FVector DropLocation, bool bInDropZone);
 
 	UPROPERTY()
 	UMaterialInstanceDynamic* DynamicMaterial = nullptr;
 
-	float BobTime = 0.f;
-	FVector SpawnerBaseLocation;
+	float    BobTime = 0.f;
+	FVector  SpawnerBaseLocation = FVector::ZeroVector;
 };

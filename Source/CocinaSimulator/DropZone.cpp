@@ -8,6 +8,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 
+
 ADropZone::ADropZone()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -21,35 +22,47 @@ ADropZone::ADropZone()
 	RootComponent = ZoneBox;
 }
 
+
+
 void ADropZone::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ADropZone, DeliveredItems);
 }
 
+
+
 void ADropZone::ReceiveItem(APickUp* Item)
 {
+	// Solo el servidor ejecuta esta lógica
 	if (!HasAuthority()) return;
+	if (!Item)           return;
 
-	if (!Item || Item->bWasDelivered || Item->ItemState != EItemState::Ready)
-	{
-		return;
-	}
+	// Validaciones: ya entregado, no está listo, o ya tenemos ese ingrediente
+	if (Item->bWasDelivered)                          return;
+	if (Item->ItemState != EItemState::Ready)          return;
+	if (HasIngredient(Item->IngredientType))           return;
 
-	if (HasIngredient(Item->IngredientType))
-	{
-		return;
-	}
-
+	// Si el jugador todavía lo lleva en la mano, soltarlo en la zona
 	if (Item->bIsHeld)
 	{
-		Item->Drop(GetActorLocation(), true);
+		// DropItem con bInDropZone=true: lo coloca aquí y marca como Delivered
+		Item->DropItem(GetActorLocation(), true);
+	}
+	else
+	{
+		// Ya estaba suelto en el mundo pero dentro de la zona (overlap)
+		Item->SetItemState(EItemState::Delivered);
+		Item->bWasDelivered = true;
+		Item->SetActorLocation(GetActorLocation());
+		Item->SetActorEnableCollision(false);
 	}
 
-	Item->bWasDelivered = true;
 	DeliveredItems.Add(Item);
 
+	// Notificar a todos los clientes visualmente
 	Multicast_OnItemReceived(Item);
+
 	CheckRecipeComplete();
 }
 
@@ -65,43 +78,41 @@ bool ADropZone::HasIngredient(EIngredientType Type) const
 	return false;
 }
 
-void ADropZone::OnRep_DeliveredItems()
-{
-	BP_OnDeliveredItemsUpdated(DeliveredItems);
-}
-
 void ADropZone::CheckRecipeComplete()
 {
-	bool bHasMeat = HasIngredient(EIngredientType::Meat);
-	bool bHasLettuce = HasIngredient(EIngredientType::Lettuce);
-	bool bHasPotato = HasIngredient(EIngredientType::Potato);
+	// Solo el servidor llama esto (viene de ReceiveItem que ya valida autoridad)
+	const bool bHasMeat = HasIngredient(EIngredientType::Meat);
+	const bool bHasLettuce = HasIngredient(EIngredientType::Lettuce);
+	const bool bHasPotato = HasIngredient(EIngredientType::Potato);
 
-	if (bHasMeat && bHasLettuce && bHasPotato)
+	if (!bHasMeat || !bHasLettuce || !bHasPotato) return;
+
+	// Receta completa — sumar puntos y limpiar
+	if (ACocinaSimulatorGameMode* GM = Cast<ACocinaSimulatorGameMode>(UGameplayStatics::GetGameMode(GetWorld())))
 	{
-		if (ACocinaSimulatorGameMode* GM = Cast<ACocinaSimulatorGameMode>(UGameplayStatics::GetGameMode(GetWorld())))
+		if (ACocinaSimulatorGameState* GS = GM->GetGameState<ACocinaSimulatorGameState>())
 		{
-			if (ACocinaSimulatorGameState* GS = GM->GetGameState<ACocinaSimulatorGameState>())
-			{
-				GS->SetSharedScore(GS->GetSharedScore() + 100);
-			}
-
-			GM->AddDelivery(nullptr);
+			GS->SetSharedScore(GS->GetSharedScore() + 100);
 		}
-
-		for (APickUp* Item : DeliveredItems)
-		{
-			if (Item)
-			{
-				Item->SetActorHiddenInGame(true);
-				Item->SetActorEnableCollision(false);
-				Item->Destroy();
-			}
-		}
-		DeliveredItems.Empty();
-
-		Multicast_OnRecipeCompleted();
+		GM->AddDelivery(nullptr);
 	}
+
+	// Destruir ingredientes en el servidor (se replica a clientes)
+	for (APickUp* Item : DeliveredItems)
+	{
+		if (Item)
+		{
+			Item->SetActorHiddenInGame(true);
+			Item->SetActorEnableCollision(false);
+			Item->Destroy();
+		}
+	}
+	DeliveredItems.Empty();
+
+	Multicast_OnRecipeCompleted();
 }
+
+
 
 void ADropZone::Multicast_OnItemReceived_Implementation(APickUp* Item)
 {
@@ -113,9 +124,19 @@ void ADropZone::Multicast_OnRecipeCompleted_Implementation()
 	BP_OnRecipeCompleted();
 }
 
+
+
+void ADropZone::OnRep_DeliveredItems()
+{
+	BP_OnDeliveredItemsUpdated(DeliveredItems);
+}
+
+
 void ADropZone::OnZoneBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
+	// OnZoneBeginOverlap se dispara en todos los clientes pero ReceiveItem
+	// tiene la guarda HasAuthority(), así que es seguro llamarlo aquí.
 	if (APickUp* Item = Cast<APickUp>(OtherActor))
 	{
 		ReceiveItem(Item);

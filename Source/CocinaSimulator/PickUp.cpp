@@ -5,9 +5,12 @@
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
 
+
 APickUp::APickUp()
 {
 	PrimaryActorTick.bCanEverTick = true;
+
+	// Replicación obligatoria para un objeto multijugador
 	bReplicates = true;
 	SetReplicateMovement(true);
 
@@ -22,6 +25,7 @@ APickUp::APickUp()
 	InteractionSphere->SetSphereRadius(80.f);
 	InteractionSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 }
+
 
 void APickUp::BeginPlay()
 {
@@ -41,9 +45,9 @@ void APickUp::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Attachment handles following the hold point on all clients automatically.
-	// Only do manual bobbing when on the spawner.
-	if (bIsOnSpawner && !bIsHeld)
+	// El bobbing solo lo ejecuta el servidor (SetActorLocation replica el transform).
+	// Los clientes solo ven el resultado replicado, no calculan la posición ellos mismos.
+	if (HasAuthority() && bIsOnSpawner && !bIsHeld)
 	{
 		BobTime += DeltaTime;
 		float BobOffset = FMath::Sin(BobTime * 2.f) * 10.f;
@@ -52,6 +56,7 @@ void APickUp::Tick(float DeltaTime)
 	}
 }
 
+
 void APickUp::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -59,30 +64,104 @@ void APickUp::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 	DOREPLIFETIME(APickUp, bWasDelivered);
 	DOREPLIFETIME(APickUp, ItemState);
 	DOREPLIFETIME(APickUp, IngredientType);
+	DOREPLIFETIME(APickUp, bIsOnSpawner);   // <-- nuevo
 }
 
-void APickUp::PickUp(USceneComponent* HoldPoint)
+
+void APickUp::PickUpItem(USceneComponent* HoldPoint)
 {
 	if (!HoldPoint || bIsHeld) return;
 
+	if (HasAuthority())
+	{
+		// Ejecutamos directo si ya somos el servidor
+		Server_PickUp_Implementation(HoldPoint);
+	}
+	else
+	{
+		// Cliente: pedimos al servidor que lo haga
+		Server_PickUp(HoldPoint);
+	}
+}
+
+void APickUp::DropItem(FVector DropLocation, bool bInDropZone)
+{
+	if (!bIsHeld) return;
+
+	if (HasAuthority())
+	{
+		Server_Drop_Implementation(DropLocation, bInDropZone);
+	}
+	else
+	{
+		Server_Drop(DropLocation, bInDropZone);
+	}
+}
+
+void APickUp::PlaceInStation(const FVector& Location)
+{
+	if (!bIsHeld) return;
+
+	if (HasAuthority())
+	{
+		Server_PlaceInStation_Implementation(Location);
+	}
+	else
+	{
+		Server_PlaceInStation(Location);
+	}
+}
+
+void APickUp::MarkReady()
+{
+	if (HasAuthority())
+	{
+		Server_MarkReady_Implementation();
+	}
+	else
+	{
+		Server_MarkReady();
+	}
+}
+
+void APickUp::SetItemState(EItemState NewState)
+{
+	// Solo el servidor modifica el estado canónico
+	if (!HasAuthority()) return;
+	if (ItemState == NewState) return;
+
+	ItemState = NewState;
+	BP_OnStateChanged(ItemState); // servidor
+	UpdateItemColor();            // servidor
+	// OnRep_ItemState se dispara en clientes automáticamente
+}
+
+
+void APickUp::Server_PickUp_Implementation(USceneComponent* HoldPoint)
+{
+	if (!HoldPoint || bIsHeld) return;
+
+	// Actualizar estado replicado
 	bIsHeld = true;
 	bIsOnSpawner = false;
 	bWasDelivered = false;
 	HoldPointRef = HoldPoint;
 
+	// Física desactivada mientras se lleva
+	SetReplicateMovement(false); // El attachment se encarga del transform
 	Mesh->SetSimulatePhysics(false);
 	SetActorEnableCollision(false);
 
-	// Attach to the hold point so all clients see the object follow the character.
-	// Actor attachment replicates automatically in Unreal.
+	// Attachment se replica automáticamente en UE5
 	AttachToComponent(HoldPoint, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 
-	BP_OnPickedUp();
+	// Notificar a TODOS los clientes del evento visual/sonoro
+	Multicast_OnPickedUp();
 }
 
-void APickUp::Drop(FVector DropLocation, bool bInDropZone)
+void APickUp::Server_Drop_Implementation(FVector DropLocation, bool bInDropZone)
 {
-	if (!bIsHeld && !bInDropZone) return;
+	if (!bIsHeld) return;
 
 	bIsHeld = false;
 	HoldPointRef = nullptr;
@@ -103,21 +182,18 @@ void APickUp::Drop(FVector DropLocation, bool bInDropZone)
 	else
 	{
 		SetActorLocation(DropLocation + FVector(0.f, 0.f, 15.f));
-
 		SetActorEnableCollision(true);
 		Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		Mesh->SetSimulatePhysics(true);
+		SetReplicateMovement(true); // Vuelve a replicar física
 	}
 
-	BP_OnDropped(bInDropZone);
+	Multicast_OnDropped(bInDropZone);
 }
 
-void APickUp::PlaceInStation(const FVector& Location)
+void APickUp::Server_PlaceInStation_Implementation(FVector Location)
 {
-	if (!bIsHeld)
-	{
-		return;
-	}
+	if (!bIsHeld) return;
 
 	bIsHeld = false;
 	HoldPointRef = nullptr;
@@ -130,34 +206,57 @@ void APickUp::PlaceInStation(const FVector& Location)
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Mesh->SetSimulatePhysics(false);
 	UpdateItemColor();
+
+	// Notificar cambio de estado a clientes (OnRep_ItemState)
 }
 
-void APickUp::MarkReady()
+void APickUp::Server_MarkReady_Implementation()
 {
 	ItemState = EItemState::Ready;
 	SetActorEnableCollision(true);
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Mesh->SetSimulatePhysics(true);
+	SetReplicateMovement(true);
 	UpdateItemColor();
 }
 
-void APickUp::SetItemState(EItemState NewState)
+
+void APickUp::Multicast_OnPickedUp_Implementation()
 {
-	if (ItemState == NewState)
-	{
-		return;
-	}
-
-	ItemState = NewState;
-	BP_OnStateChanged(ItemState);
-	UpdateItemColor();
+	// Aquí va cualquier efecto visual/sonoro que todos deben ver
+	BP_OnPickedUp();
 }
+
+void APickUp::Multicast_OnDropped_Implementation(bool bInDropZone)
+{
+	BP_OnDropped(bInDropZone);
+}
+
 
 void APickUp::OnRep_ItemState()
 {
 	BP_OnStateChanged(ItemState);
 	UpdateItemColor();
 }
+
+void APickUp::OnRep_IsHeld()
+{
+
+	if (!bIsHeld)
+	{
+		Mesh->SetSimulatePhysics(true);
+		SetActorEnableCollision(true);
+	}
+}
+
+void APickUp::OnRep_IsOnSpawner()
+{
+	if (bIsOnSpawner)
+	{
+		BobTime = 0.f;
+	}
+}
+
 
 void APickUp::UpdateItemColor()
 {
@@ -169,10 +268,7 @@ void APickUp::UpdateItemColor()
 		}
 	}
 
-	if (!DynamicMaterial)
-	{
-		return;
-	}
+	if (!DynamicMaterial) return;
 
 	FLinearColor NewColor;
 
@@ -189,6 +285,9 @@ void APickUp::UpdateItemColor()
 		break;
 	case EItemState::Delivered:
 		NewColor = FLinearColor(0.5f, 0.5f, 0.5f, 1.f);
+		break;
+	default:
+		NewColor = FLinearColor::White;
 		break;
 	}
 
