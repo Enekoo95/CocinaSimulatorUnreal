@@ -71,6 +71,9 @@ void APickUp::SetItemState(EItemState NewState)
 	OnRep_ItemState();
 }
 
+// =============================================================================
+// Helpers de fisica
+// =============================================================================
 
 void APickUp::ApplyPickupPhysics()
 {
@@ -95,6 +98,9 @@ void APickUp::ApplyDeliveredPhysics()
 	InteractionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
+// =============================================================================
+// PickUp
+// =============================================================================
 
 void APickUp::PickUpItem(USceneComponent* HoldPoint, ACocinaSimulatorCharacter* Character)
 {
@@ -128,6 +134,9 @@ void APickUp::Server_PickUp_Implementation(USceneComponent* HoldPoint, ACocinaSi
 	Multicast_OnPickedUp();
 }
 
+// =============================================================================
+// Drop
+// =============================================================================
 
 void APickUp::DropItem(FVector DropLocation, bool bInDropZone)
 {
@@ -170,6 +179,9 @@ void APickUp::Server_Drop_Implementation(FVector DropLocation, bool bInDropZone)
 	Multicast_OnDropped(bInDropZone);
 }
 
+// =============================================================================
+// PlaceInStation
+// =============================================================================
 
 void APickUp::PlaceInStation(const FVector& Location)
 {
@@ -197,6 +209,9 @@ void APickUp::Server_PlaceInStation_Implementation(FVector Location)
 	SetItemState(EItemState::Processing);
 }
 
+// =============================================================================
+// MarkReady
+// =============================================================================
 
 void APickUp::MarkReady()
 {
@@ -212,6 +227,9 @@ void APickUp::Server_MarkReady_Implementation()
 	SetItemState(EItemState::Ready);
 }
 
+// =============================================================================
+// Multicast
+// =============================================================================
 
 void APickUp::Multicast_OnPickedUp_Implementation()
 {
@@ -223,6 +241,9 @@ void APickUp::Multicast_OnDropped_Implementation(bool bInDropZone)
 	BP_OnDropped(bInDropZone);
 }
 
+// =============================================================================
+// RepNotify
+// =============================================================================
 
 void APickUp::OnRep_ItemState()
 {
@@ -250,6 +271,9 @@ void APickUp::OnRep_IsHeld()
 	}
 	else
 	{
+		// FIX PRINCIPAL: siempre desattachar al soltar, sin esto el item
+		// queda adjunto visualmente y la InteractionSphere permanece desactivada,
+		// impidiendo que cualquier otro jugador lo recoja
 		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
 		if (!bWasDelivered

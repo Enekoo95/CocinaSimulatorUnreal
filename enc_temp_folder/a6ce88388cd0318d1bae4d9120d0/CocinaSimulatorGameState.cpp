@@ -17,6 +17,9 @@ void ACocinaSimulatorGameState::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME(ACocinaSimulatorGameState, DeliveredIngredients);
 }
 
+// =============================================================================
+// Setters
+// =============================================================================
 
 void ACocinaSimulatorGameState::SetTimeRemaining(float NewTime)
 {
@@ -49,6 +52,7 @@ void ACocinaSimulatorGameState::AddDeliveredIngredient(EIngredientType Type)
 
 	DeliveredIngredients.Add(Type);
 
+	// Llamada manual en servidor (RepNotify no se dispara en autoridad)
 	OnRep_DeliveredIngredients();
 }
 
@@ -60,12 +64,18 @@ void ACocinaSimulatorGameState::ClearDeliveredIngredients()
 	OnRep_DeliveredIngredients();
 }
 
+// =============================================================================
+// Getters
+// =============================================================================
 
 bool ACocinaSimulatorGameState::HasDeliveredIngredient(EIngredientType Type) const
 {
 	return DeliveredIngredients.Contains(Type);
 }
 
+// =============================================================================
+// RepNotify
+// =============================================================================
 
 void ACocinaSimulatorGameState::OnRep_TimeRemaining()
 {

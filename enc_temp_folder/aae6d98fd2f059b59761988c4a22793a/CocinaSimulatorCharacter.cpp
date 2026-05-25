@@ -50,6 +50,9 @@ ACocinaSimulatorCharacter::ACocinaSimulatorCharacter()
 	SetReplicateMovement(true);
 }
 
+// =============================================================================
+// Input binding
+// =============================================================================
 void ACocinaSimulatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
@@ -95,6 +98,9 @@ void ACocinaSimulatorCharacter::DoLook(float Yaw, float Pitch)
 void ACocinaSimulatorCharacter::DoJumpStart() { Jump(); }
 void ACocinaSimulatorCharacter::DoJumpEnd() { StopJumping(); }
 
+// =============================================================================
+// Helpers de sweep — compartido por cliente y servidor
+// =============================================================================
 APickUp* ACocinaSimulatorCharacter::FindNearestPickup() const
 {
 	FCollisionShape Sphere = FCollisionShape::MakeSphere(60.f);
@@ -121,6 +127,9 @@ APickUp* ACocinaSimulatorCharacter::FindNearestPickup() const
 	return nullptr;
 }
 
+// =============================================================================
+// DoInteract
+// =============================================================================
 void ACocinaSimulatorCharacter::DoInteract()
 {
 	if (HasAuthority())
@@ -149,6 +158,9 @@ void ACocinaSimulatorCharacter::DoInteract()
 	}
 }
 
+// =============================================================================
+// Server RPCs
+// =============================================================================
 void ACocinaSimulatorCharacter::Server_TryPickup_Implementation(APickUp* Item)
 {
 	if (!Item || Item->bIsHeld) return;
@@ -181,10 +193,15 @@ bool ACocinaSimulatorCharacter::ServerAttemptInteract_Validate()
 	return true;
 }
 
+// =============================================================================
+// Helpers internos servidor
+// =============================================================================
 void ACocinaSimulatorCharacter::Server_DoPickup(APickUp* Item)
 {
 	if (!Item || Item->bIsHeld || !HoldPoint) return;
 
+	// FIX PRINCIPAL: pasar 'this' para que HoldingCharacter se replique
+	// y OnRep_IsHeld en los clientes pueda hacer el attach visual correcto
 	Item->PickUpItem(HoldPoint, this);
 	HeldItem = Item;
 
@@ -201,6 +218,7 @@ void ACocinaSimulatorCharacter::Server_DoDrop()
 
 	TArray<AActor*> Overlapping;
 
+	// 1. ¿Sobre una ProcessingStation?
 	GetOverlappingActors(Overlapping, AProcessingStation::StaticClass());
 	if (Overlapping.Num() > 0)
 	{
@@ -214,6 +232,7 @@ void ACocinaSimulatorCharacter::Server_DoDrop()
 		}
 	}
 
+	// 2. ¿Sobre una DropZone?
 	GetOverlappingActors(Overlapping, ADropZone::StaticClass());
 	if (Overlapping.Num() > 0)
 	{
@@ -225,10 +244,14 @@ void ACocinaSimulatorCharacter::Server_DoDrop()
 		}
 	}
 
+	// 3. Soltar al suelo
 	HeldItem->DropItem(HoldPoint->GetComponentLocation());
 	HeldItem = nullptr;
 }
 
+// =============================================================================
+// Replication
+// =============================================================================
 void ACocinaSimulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);

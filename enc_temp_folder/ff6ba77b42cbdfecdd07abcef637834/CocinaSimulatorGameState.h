@@ -14,6 +14,7 @@ public:
 	ACocinaSimulatorGameState();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	// ---- Setters (solo servidor) -----------------------------------------
 
 	UFUNCTION(BlueprintCallable, Category = "Game")
 	void SetTimeRemaining(float NewTime);
@@ -32,6 +33,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Game")
 	void ClearDeliveredIngredients();
 
+	// ---- Getters ---------------------------------------------------------
 
 	UFUNCTION(BlueprintPure, Category = "Game")
 	float GetTimeRemaining() const { return TimeRemaining; }
@@ -49,6 +51,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Game")
 	bool HasDeliveredIngredient(EIngredientType Type) const;
 
+	// ---- Variables replicadas --------------------------------------------
 
 	UPROPERTY(ReplicatedUsing = OnRep_TimeRemaining, BlueprintReadOnly, Category = "Game")
 	float TimeRemaining = 0.f;
@@ -62,9 +65,12 @@ public:
 	UPROPERTY(ReplicatedUsing = OnRep_GameOver, BlueprintReadOnly, Category = "Game")
 	bool bGameOver = false;
 
+	// Array con los tipos de ingrediente que ya han llegado a la DropZone.
+	// El HUD lee esto para saber cuáles marcar como entregados.
 	UPROPERTY(ReplicatedUsing = OnRep_DeliveredIngredients, BlueprintReadOnly, Category = "Game")
 	TArray<EIngredientType> DeliveredIngredients;
 
+	// ---- Blueprint events -----------------------------------------------
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Game")
 	void BP_OnTimerUpdated(float NewTime);
@@ -78,6 +84,8 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Game")
 	void BP_OnMatchEnded();
 
+	// Llamado en todos los clientes cuando cambia DeliveredIngredients.
+	// El HUD implementa este evento para refrescar la lista de ingredientes.
 	UFUNCTION(BlueprintImplementableEvent, Category = "Game")
 	void BP_OnDeliveredIngredientsUpdated(const TArray<EIngredientType>& Ingredients);
 

@@ -44,6 +44,7 @@ protected:
 
 public:
 	ACocinaSimulatorCharacter();
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
@@ -69,6 +70,9 @@ protected:
 	void Server_DoPickup(APickUp* Item);
 	void Server_DoDrop();
 
+	// Helper de sweep compartido por cliente y servidor
+	APickUp* FindNearestPickup() const;
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "Input") virtual void DoMove(float Right, float Forward);
 	UFUNCTION(BlueprintCallable, Category = "Input") virtual void DoLook(float Yaw, float Pitch);
@@ -78,5 +82,5 @@ public:
 
 	FORCEINLINE USpringArmComponent* GetCameraBoom()  const { return CameraBoom; }
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
-	FORCEINLINE USceneComponent* GetHoldPoint()   const { return HoldPoint; }
+	FORCEINLINE USceneComponent* GetHoldPoint()    const { return HoldPoint; }
 };

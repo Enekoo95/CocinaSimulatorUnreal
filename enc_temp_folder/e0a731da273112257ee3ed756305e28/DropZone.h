@@ -24,7 +24,7 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	// Llamar siempre desde el servidor
+	// Llamar siempre desde el servidor (o desde ReceiveItem que ya valida autoridad)
 	UFUNCTION(BlueprintCallable, Category = "DropZone")
 	void ReceiveItem(APickUp* Item);
 

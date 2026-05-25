@@ -32,16 +32,20 @@ void ADropZone::ReceiveItem(APickUp* Item)
 	if (!HasAuthority()) return;
 	if (!Item)           return;
 
+	// Validaciones: ya entregado, no esta listo, o ya tenemos ese ingrediente
 	if (Item->bWasDelivered)                          return;
 	if (Item->ItemState != EItemState::Ready)          return;
 	if (HasIngredient(Item->IngredientType))           return;
 
+	// Si el jugador todavia lo lleva en la mano, soltarlo en la zona
 	if (Item->bIsHeld)
 	{
+		// DropItem con bInDropZone=true: lo coloca aqui y marca como Delivered
 		Item->DropItem(GetActorLocation(), true);
 	}
 	else
 	{
+		// Ya estaba suelto en el mundo pero dentro de la zona (overlap)
 		Item->SetItemState(EItemState::Delivered);
 		Item->bWasDelivered = true;
 		Item->SetActorLocation(GetActorLocation());
@@ -73,10 +77,12 @@ bool ADropZone::HasIngredient(EIngredientType Type) const
 
 void ADropZone::CheckRecipeComplete()
 {
+	// Solo el servidor llama esto (viene de ReceiveItem que ya valida autoridad)
 	if (!HasIngredient(EIngredientType::Meat))    return;
 	if (!HasIngredient(EIngredientType::Lettuce)) return;
 	if (!HasIngredient(EIngredientType::Potato))  return;
 
+	// Receta completa — sumar puntos
 	if (ACocinaSimulatorGameMode* GM = Cast<ACocinaSimulatorGameMode>(UGameplayStatics::GetGameMode(GetWorld())))
 	{
 		if (ACocinaSimulatorGameState* GS = GM->GetGameState<ACocinaSimulatorGameState>())
@@ -86,13 +92,16 @@ void ADropZone::CheckRecipeComplete()
 		GM->AddDelivery(nullptr);
 	}
 
+	// Notificar visualmente ANTES de destruir para que los clientes vean el feedback
 	Multicast_OnRecipeCompleted();
 
+	// Retrasar destruccion: dar tiempo a que la replicacion llegue a los clientes
+	// antes de invalidar los punteros de DeliveredItems
 	GetWorldTimerManager().SetTimer(
 		CleanupTimerHandle,
 		this,
 		&ADropZone::CleanupAfterRecipe,
-		0.5f,  
+		0.5f,   // 500ms — seguro en LAN y WAN; bajar a 0.2f si la red es muy buena
 		false
 	);
 }
@@ -142,7 +151,8 @@ void ADropZone::OnRep_DeliveredItems()
 void ADropZone::OnZoneBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-
+	// OnZoneBeginOverlap se dispara en todos los clientes pero ReceiveItem
+	// tiene la guarda HasAuthority(), asi que es seguro llamarlo aqui.
 	if (APickUp* Item = Cast<APickUp>(OtherActor))
 	{
 		ReceiveItem(Item);

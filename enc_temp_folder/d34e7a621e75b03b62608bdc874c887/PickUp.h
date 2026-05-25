@@ -104,6 +104,7 @@ protected:
 	UFUNCTION() void OnRep_IsHeld();
 	UFUNCTION() void OnRep_IsOnSpawner();
 
+	// Server RPCs internos — PickUpItem/DropItem los llaman si no somos autoridad
 	UFUNCTION(Server, Reliable) void Server_PickUp(USceneComponent* HoldPoint, ACocinaSimulatorCharacter* Character);
 	UFUNCTION(Server, Reliable) void Server_Drop(FVector DropLocation, bool bInDropZone);
 	UFUNCTION(Server, Reliable) void Server_PlaceInStation(FVector Location);
@@ -114,7 +115,7 @@ protected:
 
 	// Helpers internos
 	void ApplyPickupPhysics();    // Desactiva fisica/colision al coger
-	void ApplyDropPhysics();      // Reactiva fisica/colision al soltar 
+	void ApplyDropPhysics();      // Reactiva fisica/colision al soltar normalmente
 	void ApplyDeliveredPhysics(); // Desactiva todo al entregar en DropZone
 
 	void UpdateItemColor();
