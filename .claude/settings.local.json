@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(\"C:\\\\Program Files\\\\Epic Games\\\\UE_5.5\\\\Engine\\\\Build\\\\BatchFiles\\\\Build.bat\" CocinaSimulatorEditor Win64 Development \"c:\\\\Markel\\\\CocinaSimulatorUnreal\\\\CocinaSimulator.uproject\" -waitmutex)"
-    ]
-  }
-}
