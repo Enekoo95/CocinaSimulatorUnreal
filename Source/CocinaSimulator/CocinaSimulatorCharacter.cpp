@@ -1,5 +1,4 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
-
 #include "CocinaSimulatorCharacter.h"
 #include "Engine/LocalPlayer.h"
 #include "Camera/CameraComponent.h"
@@ -15,8 +14,6 @@
 #include "DropZone.h"
 #include "ProcessingStation.h"
 #include "Net/UnrealNetwork.h"
-
-
 
 ACocinaSimulatorCharacter::ACocinaSimulatorCharacter()
 {
@@ -53,51 +50,42 @@ ACocinaSimulatorCharacter::ACocinaSimulatorCharacter()
 	SetReplicateMovement(true);
 }
 
-
+// =============================================================================
+// Input binding
+// =============================================================================
 void ACocinaSimulatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
-	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
-		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ACocinaSimulatorCharacter::Move);
-		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &ACocinaSimulatorCharacter::Look);
-		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ACocinaSimulatorCharacter::Look);
+		EIC->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
+		EIC->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+		EIC->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ACocinaSimulatorCharacter::Move);
+		EIC->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &ACocinaSimulatorCharacter::Look);
+		EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &ACocinaSimulatorCharacter::Look);
 
 		if (InteractAction)
-		{
-			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &ACocinaSimulatorCharacter::DoInteract);
-		}
-	}
-	else
-	{
-		UE_LOG(LogCocinaSimulator, Error, TEXT("'%s' No se encontró Enhanced Input Component!"), *GetNameSafe(this));
+			EIC->BindAction(InteractAction, ETriggerEvent::Started, this, &ACocinaSimulatorCharacter::DoInteract);
 	}
 }
 
 void ACocinaSimulatorCharacter::Move(const FInputActionValue& Value)
 {
-	FVector2D MovementVector = Value.Get<FVector2D>();
-	DoMove(MovementVector.X, MovementVector.Y);
+	FVector2D V = Value.Get<FVector2D>();
+	DoMove(V.X, V.Y);
 }
 
 void ACocinaSimulatorCharacter::Look(const FInputActionValue& Value)
 {
-	FVector2D LookAxisVector = Value.Get<FVector2D>();
-	DoLook(LookAxisVector.X, LookAxisVector.Y);
+	FVector2D V = Value.Get<FVector2D>();
+	DoLook(V.X, V.Y);
 }
 
 void ACocinaSimulatorCharacter::DoMove(float Right, float Forward)
 {
 	if (!GetController()) return;
-
-	const FRotator Rotation = GetController()->GetControlRotation();
-	const FRotator YawRotation(0, Rotation.Yaw, 0);
-	const FVector  ForwardDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-	const FVector  RightDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-
-	AddMovementInput(ForwardDir, Forward);
-	AddMovementInput(RightDir, Right);
+	const FRotator Yaw(0, GetController()->GetControlRotation().Yaw, 0);
+	AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::X), Forward);
+	AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y), Right);
 }
 
 void ACocinaSimulatorCharacter::DoLook(float Yaw, float Pitch)
@@ -110,102 +98,119 @@ void ACocinaSimulatorCharacter::DoLook(float Yaw, float Pitch)
 void ACocinaSimulatorCharacter::DoJumpStart() { Jump(); }
 void ACocinaSimulatorCharacter::DoJumpEnd() { StopJumping(); }
 
-
-
+// =============================================================================
+// DoInteract — cliente envía RPC, servidor ejecuta lógica
+// FIX: el cliente detecta qué ítem quiere coger y se lo pasa al servidor
+//      directamente en el RPC, evitando pasar USceneComponent* por RPC
+// =============================================================================
 void ACocinaSimulatorCharacter::DoInteract()
 {
-	// El cliente NO ejecuta lógica de juego directamente.
-	// Solo envía la petición al servidor.
-	if (!HasAuthority())
+	if (HasAuthority())
 	{
-		ServerAttemptInteract();
+		// Servidor dedicado o listen server ejecutando su propio personaje
+		if (HeldItem)
+			Server_DoDrop();
+		else
+		{
+			// Buscar ítem en rango
+			APickUp* Found = nullptr;
+			FCollisionShape Sphere = FCollisionShape::MakeSphere(60.f);
+			FCollisionObjectQueryParams ObjQ;
+			ObjQ.AddObjectTypesToQuery(ECC_WorldDynamic);
+			ObjQ.AddObjectTypesToQuery(ECC_PhysicsBody);
+			FCollisionQueryParams Params;
+			Params.AddIgnoredActor(this);
+
+			TArray<FHitResult> Hits;
+			GetWorld()->SweepMultiByObjectType(
+				Hits,
+				GetActorLocation(),
+				GetActorLocation() + GetActorForwardVector() * PickupRange,
+				FQuat::Identity, ObjQ, Sphere, Params
+			);
+
+			for (const FHitResult& Hit : Hits)
+			{
+				APickUp* P = Cast<APickUp>(Hit.GetActor());
+				if (P && !P->bIsHeld)
+				{
+					Found = P;
+					break;
+				}
+			}
+
+			if (Found)
+				Server_DoPickup(Found);
+		}
 		return;
 	}
 
-	// A partir de aquí solo el servidor ejecuta esto.
-
+	// FIX: cliente — detectar localmente qué quiere hacer y enviar RPC específico.
+	// NO pasar USceneComponent* por RPC. El servidor usa su propio HoldPoint.
 	if (HeldItem)
 	{
-
-		// Restaurar rotación libre
-		GetCharacterMovement()->bOrientRotationToMovement = true;
-		bUseControllerRotationYaw = false;
-
-		TArray<AActor*> OverlappingActors;
-
-		// 1. ¿Estamos sobre una ProcessingStation?
-		GetOverlappingActors(OverlappingActors, AProcessingStation::StaticClass());
-		bool bDeliveredToStation = false;
-
-		if (OverlappingActors.Num() > 0)
-		{
-			AProcessingStation* Station = Cast<AProcessingStation>(OverlappingActors[0]);
-			if (Station && Station->ReceiveItem(HeldItem))
-			{
-				// ReceiveItem llama internamente a PlaceInStation, que ya es RPC-safe
-				HeldItem = nullptr;
-				bDeliveredToStation = true;
-			}
-		}
-
-		if (!bDeliveredToStation)
-		{
-			// 2. ¿Estamos sobre una DropZone?
-			GetOverlappingActors(OverlappingActors, ADropZone::StaticClass());
-			if (OverlappingActors.Num() > 0)
-			{
-				ADropZone* Zone = Cast<ADropZone>(OverlappingActors[0]);
-				if (Zone)
-				{
-					Zone->ReceiveItem(HeldItem);
-					// ReceiveItem llama DropItem internamente (ver DropZone.cpp)
-					HeldItem = nullptr;
-				}
-			}
-			else
-			{
-				// 3. Soltar al suelo
-				HeldItem->DropItem(HoldPoint->GetComponentLocation());
-				HeldItem = nullptr;
-			}
-		}
+		Server_TryDrop();
 	}
 	else
 	{
-
-		FVector Start = GetActorLocation();
-		FVector End = Start + GetActorForwardVector() * PickupRange;
-
-		TArray<FHitResult> Hits;
-		FCollisionShape    Sphere = FCollisionShape::MakeSphere(60.f);
-
-		FCollisionObjectQueryParams ObjQuery;
-		ObjQuery.AddObjectTypesToQuery(ECC_WorldDynamic);
-		ObjQuery.AddObjectTypesToQuery(ECC_PhysicsBody);
-
+		// El cliente hace el sweep local para saber qué ítem apuntar
+		FCollisionShape Sphere = FCollisionShape::MakeSphere(60.f);
+		FCollisionObjectQueryParams ObjQ;
+		ObjQ.AddObjectTypesToQuery(ECC_WorldDynamic);
+		ObjQ.AddObjectTypesToQuery(ECC_PhysicsBody);
 		FCollisionQueryParams Params;
 		Params.AddIgnoredActor(this);
 
-		GetWorld()->SweepMultiByObjectType(Hits, Start, End, FQuat::Identity, ObjQuery, Sphere, Params);
+		TArray<FHitResult> Hits;
+		GetWorld()->SweepMultiByObjectType(
+			Hits,
+			GetActorLocation(),
+			GetActorLocation() + GetActorForwardVector() * PickupRange,
+			FQuat::Identity, ObjQ, Sphere, Params
+		);
 
 		for (const FHitResult& Hit : Hits)
 		{
-			APickUp* Pickup = Cast<APickUp>(Hit.GetActor());
-			if (Pickup && !Pickup->bIsHeld)
+			APickUp* P = Cast<APickUp>(Hit.GetActor());
+			// FIX: comprobar bIsHeld con el valor local replicado
+			if (P && !P->bIsHeld)
 			{
-				// Llamamos PickUpItem — ya gestiona el Server RPC internamente
-				Pickup->PickUpItem(HoldPoint);
-				HeldItem = Pickup;
-
-				// Mientras lleva algo: el personaje mira hacia donde apunta la cámara
-				GetCharacterMovement()->bOrientRotationToMovement = false;
-				bUseControllerRotationYaw = true;
+				Server_TryPickup(P);
 				break;
 			}
 		}
 	}
 }
 
+// =============================================================================
+// Server RPCs
+// =============================================================================
+
+// FIX: Server_TryPickup recibe el APickUp* (actor replicado, se serializa bien)
+//      y usa el HoldPoint del servidor — no necesita que el cliente lo pase
+void ACocinaSimulatorCharacter::Server_TryPickup_Implementation(APickUp* Item)
+{
+	if (!Item || Item->bIsHeld) return;
+	Server_DoPickup(Item);
+}
+
+bool ACocinaSimulatorCharacter::Server_TryPickup_Validate(APickUp* Item)
+{
+	return true;
+}
+
+void ACocinaSimulatorCharacter::Server_TryDrop_Implementation()
+{
+	if (!HeldItem) return;
+	Server_DoDrop();
+}
+
+bool ACocinaSimulatorCharacter::Server_TryDrop_Validate()
+{
+	return true;
+}
+
+// Mantenido por compatibilidad — redirige a los helpers
 void ACocinaSimulatorCharacter::ServerAttemptInteract_Implementation()
 {
 	DoInteract();
@@ -216,8 +221,65 @@ bool ACocinaSimulatorCharacter::ServerAttemptInteract_Validate()
 	return true;
 }
 
+// =============================================================================
+// Helpers internos servidor
+// =============================================================================
+void ACocinaSimulatorCharacter::Server_DoPickup(APickUp* Item)
+{
+	if (!Item || Item->bIsHeld || !HoldPoint) return;
 
+	// FIX: llamar directamente a Server_PickUp_Implementation pasando
+	// el HoldPoint del servidor (no por RPC, es llamada local en el servidor)
+	Item->PickUpItem(HoldPoint);
+	HeldItem = Item;
 
+	GetCharacterMovement()->bOrientRotationToMovement = false;
+	bUseControllerRotationYaw = true;
+}
+
+void ACocinaSimulatorCharacter::Server_DoDrop()
+{
+	if (!HeldItem) return;
+
+	GetCharacterMovement()->bOrientRotationToMovement = true;
+	bUseControllerRotationYaw = false;
+
+	TArray<AActor*> Overlapping;
+
+	// 1. ¿Sobre una ProcessingStation?
+	GetOverlappingActors(Overlapping, AProcessingStation::StaticClass());
+	if (Overlapping.Num() > 0)
+	{
+		if (AProcessingStation* Station = Cast<AProcessingStation>(Overlapping[0]))
+		{
+			if (Station->ReceiveItem(HeldItem))
+			{
+				HeldItem = nullptr;
+				return;
+			}
+		}
+	}
+
+	// 2. ¿Sobre una DropZone?
+	GetOverlappingActors(Overlapping, ADropZone::StaticClass());
+	if (Overlapping.Num() > 0)
+	{
+		if (ADropZone* Zone = Cast<ADropZone>(Overlapping[0]))
+		{
+			Zone->ReceiveItem(HeldItem);
+			HeldItem = nullptr;
+			return;
+		}
+	}
+
+	// 3. Soltar al suelo
+	HeldItem->DropItem(HoldPoint->GetComponentLocation());
+	HeldItem = nullptr;
+}
+
+// =============================================================================
+// Replication
+// =============================================================================
 void ACocinaSimulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -226,6 +288,7 @@ void ACocinaSimulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 
 void ACocinaSimulatorCharacter::OnRep_HeldItem()
 {
+	// FIX: ajustar orientación del personaje según si lleva algo o no
 	if (HeldItem)
 	{
 		GetCharacterMovement()->bOrientRotationToMovement = false;

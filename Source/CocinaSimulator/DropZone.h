@@ -63,4 +63,9 @@ protected:
 	void OnRep_DeliveredItems();
 
 	void CheckRecipeComplete();
+
+	// Timer para retrasar destruccion y dar tiempo a que la replicacion llegue
+	FTimerHandle CleanupTimerHandle;
+
+	void CleanupAfterRecipe();
 };

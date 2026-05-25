@@ -1,6 +1,5 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 #pragma once
-
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
@@ -31,22 +30,12 @@ class ACocinaSimulatorCharacter : public ACharacter
 	USceneComponent* HoldPoint;
 
 protected:
-	UPROPERTY(EditAnywhere, Category = "Input")
-	UInputAction* JumpAction;
+	UPROPERTY(EditAnywhere, Category = "Input") UInputAction* JumpAction;
+	UPROPERTY(EditAnywhere, Category = "Input") UInputAction* MoveAction;
+	UPROPERTY(EditAnywhere, Category = "Input") UInputAction* LookAction;
+	UPROPERTY(EditAnywhere, Category = "Input") UInputAction* MouseLookAction;
+	UPROPERTY(EditAnywhere, Category = "Input") UInputAction* InteractAction;
 
-	UPROPERTY(EditAnywhere, Category = "Input")
-	UInputAction* MoveAction;
-
-	UPROPERTY(EditAnywhere, Category = "Input")
-	UInputAction* LookAction;
-
-	UPROPERTY(EditAnywhere, Category = "Input")
-	UInputAction* MouseLookAction;
-
-	UPROPERTY(EditAnywhere, Category = "Input")
-	UInputAction* InteractAction;
-
-	// HeldItem replicado con RepNotify para que los clientes actualicen su estado visual
 	UPROPERTY(ReplicatedUsing = OnRep_HeldItem, BlueprintReadOnly, Category = "Pickup")
 	APickUp* HeldItem = nullptr;
 
@@ -55,13 +44,18 @@ protected:
 
 public:
 	ACocinaSimulatorCharacter();
-
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	// Todo el flujo de interacción pasa por aquí, siempre ejecutado en el servidor
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_TryPickup(APickUp* Item);
+
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_TryDrop();
+
+	// Mantenemos este para compatibilidad con el flujo existente
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerAttemptInteract();
 
@@ -71,25 +65,18 @@ protected:
 	void Look(const FInputActionValue& Value);
 	void Move(const FInputActionValue& Value);
 
-public:
-	UFUNCTION(BlueprintCallable, Category = "Input")
-	virtual void DoMove(float Right, float Forward);
-
-	UFUNCTION(BlueprintCallable, Category = "Input")
-	virtual void DoLook(float Yaw, float Pitch);
-
-	UFUNCTION(BlueprintCallable, Category = "Input")
-	virtual void DoJumpStart();
-
-	UFUNCTION(BlueprintCallable, Category = "Input")
-	virtual void DoJumpEnd();
-
-	// DoInteract: el cliente lo llama, pero redirige al servidor via ServerAttemptInteract
-	UFUNCTION(BlueprintCallable, Category = "Input")
-	virtual void DoInteract();
+	// Helpers internos solo servidor
+	void Server_DoPickup(APickUp* Item);
+	void Server_DoDrop();
 
 public:
-	FORCEINLINE USpringArmComponent* GetCameraBoom()   const { return CameraBoom; }
+	UFUNCTION(BlueprintCallable, Category = "Input") virtual void DoMove(float Right, float Forward);
+	UFUNCTION(BlueprintCallable, Category = "Input") virtual void DoLook(float Yaw, float Pitch);
+	UFUNCTION(BlueprintCallable, Category = "Input") virtual void DoJumpStart();
+	UFUNCTION(BlueprintCallable, Category = "Input") virtual void DoJumpEnd();
+	UFUNCTION(BlueprintCallable, Category = "Input") virtual void DoInteract();
+
+	FORCEINLINE USpringArmComponent* GetCameraBoom()  const { return CameraBoom; }
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
-	FORCEINLINE USceneComponent* GetHoldPoint()    const { return HoldPoint; }
+	FORCEINLINE USceneComponent* GetHoldPoint()   const { return HoldPoint; }
 };
